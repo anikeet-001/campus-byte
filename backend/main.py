@@ -98,3 +98,44 @@ def remove_dish(dish_id: int, user=Depends(auth.require('owner'))):
         dish = owned_dish(db, user, dish_id)
         dish.active = 0
         db.save(dish)
+
+class Line(BaseModel):
+    dish: int
+    quantity: int = Field(ge=1, le=30)
+
+class Checkout(BaseModel):
+    restaurant: int
+    address: Text
+    items: list[Line] = Field(min_length=1, max_length=50)
+
+@app.post('/api/orders', status_code=201)
+def checkout(data: Checkout, user=Depends(auth.require('customer'))):
+    with transaction(True) as db:
+        lines = []
+        seen = set()
+        for item in data.items:
+            dish = db.get(Dish, id=item.dish, restaurant=data.restaurant, active=1)
+            if not dish or dish.id in seen:
+                raise HTTPException(422, 'Choose available, distinct items from one kitchen.')
+            seen.add(dish.id)
+            lines.append((dish.id, dish.name, dish.paise, item.quantity))
+        total = sum(price * count for _, _, price, count in lines)
+        order = db.add(Purchase, customer=user.id, restaurant=data.restaurant, address=data.address, total=total)
+        db.sql.executemany('INSERT INTO OrderLine VALUES(?,?,?,?,?)', [(order.id, *line) for line in lines])
+        return order
+
+@app.get('/api/orders')
+def orders(user=Depends(auth.current)):
+    with transaction() as db:
+        if user.role == 'owner':
+            scope = {'restaurant': db.get(Restaurant, owner=user.id).id}
+        elif user.role == 'partner':
+            scope = {'partner': user.id}
+        else:
+            scope = {'customer': user.id}
+        result = []
+        for order in reversed(db.list(Purchase, **scope)):
+            items = db.sql.execute('SELECT name, paise, quantity FROM OrderLine WHERE purchase=?', (order.id,))
+            result.append({**asdict(order), 'items': [dict(row) for row in items],
+                           'kitchen': db.get(Restaurant, id=order.restaurant).name})
+        return result
