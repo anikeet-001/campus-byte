@@ -16,7 +16,7 @@ export default function Orders({role}){
   return <><div className="eyebrow">{role.toUpperCase()} / LIVE ORDERS</div><h1>{role==='partner'?'Deliveries':'Orders'}<span>.</span></h1>
     {error&&<p role="alert">{error}</p>}{!orders?<p>Loading orders…</p>:!orders.length?<div className="panel"><h2>No orders yet</h2><p>{role==='partner'?'Accepted orders appear here when assigned to you.':role==='owner'?'Customer requests for your kitchen will appear here.':'Choose a kitchen and place your first order.'}</p></div>:orders.map(o=><article className="panel ticket" key={o.id}>
     <div className="split"><span className="eyebrow">TICKET #{o.id}</span><strong className="status">{names[o.status]}</strong></div><h2>{o.kitchen}</h2>
-    {o.items.map(x=><p className="split" key={x.name+x.paise+x.quantity}><span>{x.quantity} × {x.name}</span>{money(x.quantity*x.paise)}</p>)}<div className="row"><span>Order total</span><strong>{money(o.total)}</strong></div>
+    {o.items.map(x=><p className="split" key={x.dish}><span>{x.quantity} × {x.name}</span>{money(x.quantity*x.paise)}</p>)}<div className="row"><span>Order total</span><strong>{money(o.total)}</strong></div>
     <small>Deliver to</small><strong>{o.address}</strong><div className="actions">{role==='owner'&&o.status==='requested'&&<><button disabled={busy} onClick={()=>act(o.id,'accept')}>Accept order</button><button disabled={busy} className="secondary" onClick={()=>act(o.id,'reject')}>Reject</button></>}
     {role==='partner'&&['assigned','picked_up'].includes(o.status)&&<button disabled={busy} onClick={()=>act(o.id,o.status==='assigned'?'pickup':'deliver')}>{o.status==='assigned'?'Confirm pickup':'Mark delivered'}</button>}</div></article>)}</>;
 }

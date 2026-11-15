@@ -1,4 +1,4 @@
-import sqlite3
+from sqlalchemy.exc import IntegrityError
 from contextlib import asynccontextmanager
 from dataclasses import asdict
 from typing import Annotated, Literal
@@ -44,7 +44,7 @@ def register(data: Registration, tasks: BackgroundTasks):
             user = db.add(Account, email=data.email, name=data.name, role=data.role, password_hash=auth.password_hash(data.password))
             if data.role == 'owner':
                 db.add(Restaurant, owner=user.id, name=data.restaurant)
-    except sqlite3.IntegrityError:
+    except IntegrityError:
         raise HTTPException(409, 'Email already registered.')
     if user.role == 'partner':
         tasks.add_task(dispatch)
@@ -121,7 +121,7 @@ def checkout(data: Checkout, user=Depends(auth.require('customer'))):
             lines.append((dish.id, dish.name, dish.paise, item.quantity))
         total = sum(price * count for _, _, price, count in lines)
         order = db.add(Purchase, customer=user.id, restaurant=data.restaurant, address=data.address, total=total)
-        db.sql.executemany('INSERT INTO OrderLine VALUES(?,?,?,?,?)', [(order.id, *line) for line in lines])
+        db.add_lines(order.id, lines)
         return order
 
 @app.get('/api/orders')
@@ -135,7 +135,7 @@ def orders(user=Depends(auth.current)):
             scope = {'customer': user.id}
         result = []
         for order in reversed(db.list(Purchase, **scope)):
-            items = db.sql.execute('SELECT name, paise, quantity FROM OrderLine WHERE purchase=?', (order.id,))
+            items = db.query('SELECT dish, name, paise, quantity FROM OrderLine WHERE purchase=?', (order.id,))
             result.append({**asdict(order), 'items': [dict(row) for row in items],
                            'kitchen': db.get(Restaurant, id=order.restaurant).name})
         return result
@@ -143,7 +143,7 @@ def orders(user=Depends(auth.current)):
 def dispatch():
     """Reserve an idle partner and the oldest waiting order in one write transaction."""
     with transaction(True) as db:
-        idle = db.sql.execute("""SELECT id FROM Account WHERE role='partner'
+        idle = db.query("""SELECT id FROM Account WHERE role='partner'
             AND id NOT IN (SELECT partner FROM Purchase WHERE status IN ('assigned','picked_up') AND partner IS NOT NULL)
             ORDER BY id""").fetchall()
         for order, partner in zip(db.list(Purchase, status='waiting'), idle):
