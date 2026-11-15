@@ -57,3 +57,44 @@ def login(data: Login):
     if not user or not auth.verify(data.password, user.password_hash):
         raise HTTPException(401, 'Incorrect email or password.')
     return session(user)
+
+class DishInput(BaseModel):
+    name: Text
+    paise: int = Field(gt=0, le=10000000)
+
+@app.get('/api/restaurants')
+def restaurants():
+    with transaction() as db:
+        return [{'id': place.id, 'name': place.name, 'menu': [asdict(dish) for dish in db.list(Dish, restaurant=place.id, active=1)]} for place in db.list(Restaurant)]
+
+@app.get('/api/menu')
+def owner_menu(user=Depends(auth.require('owner'))):
+    with transaction() as db:
+        place = db.get(Restaurant, owner=user.id)
+        return {'name': place.name, 'menu': db.list(Dish, restaurant=place.id, active=1)}
+
+@app.post('/api/menu', status_code=201)
+def add_dish(data: DishInput, user=Depends(auth.require('owner'))):
+    with transaction(True) as db:
+        return db.add(Dish, restaurant=db.get(Restaurant, owner=user.id).id, active=1, **data.model_dump())
+
+def owned_dish(db, user, dish_id):
+    dish = db.get(Dish, id=dish_id, restaurant=db.get(Restaurant, owner=user.id).id, active=1)
+    if not dish:
+        raise HTTPException(404, 'Menu item unavailable.')
+    return dish
+
+@app.put('/api/menu/{dish_id}')
+def edit_dish(dish_id: int, data: DishInput, user=Depends(auth.require('owner'))):
+    with transaction(True) as db:
+        dish = owned_dish(db, user, dish_id)
+        dish.name, dish.paise = data.name, data.paise
+        db.save(dish)
+        return dish
+
+@app.delete('/api/menu/{dish_id}', status_code=204)
+def remove_dish(dish_id: int, user=Depends(auth.require('owner'))):
+    with transaction(True) as db:
+        dish = owned_dish(db, user, dish_id)
+        dish.active = 0
+        db.save(dish)
