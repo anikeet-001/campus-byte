@@ -96,15 +96,3 @@ npm run dev
 Open the URL printed by Vite. Its development proxy sends /api requests to port 8000. FastAPI's interactive endpoint reference is at http://localhost:8000/docs during local development. The Docker build serves the compiled React files through Nginx and proxies /api to the backend container.
 
 GitHub Actions runs the API tests, builds both containers, and exercises registration, menu creation, checkout, acceptance, pickup and delivery in isolated mobile-sized Chromium sessions. Run that browser test locally against a **fresh disposable Compose database** with `pip install playwright==1.55.0`, `python -m playwright install chromium` and `python tests/browser_flow.py`.
-
-## Publish the repository for submission
-
-The downloadable archive includes the Git repository and its feature commits. Extract it completely before opening the campus-byte folder. Run `git log --oneline` to see the history. With GitHub CLI installed and signed into your account:
-
-```sh
-gh auth login
-gh repo create campus-byte --public --source=. --remote=origin --push
-gh repo view --json url,visibility
-```
-
-If campus-byte already exists in your account, choose an unused repository name in the create command. Check that visibility is PUBLIC, open the Actions tab for the integration result, then submit the repository URL in NMS.
