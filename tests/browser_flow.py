@@ -22,7 +22,7 @@ with sync_playwright() as p:
     expect(owner.get_by_text('Masala dosa',exact=True)).to_be_visible()
     rider=signup('partner')
     customer=signup('customer')
-    customer.get_by_label('Kitchen',exact=True).select_option(label='Hostel Kitchen '+tag)
+    customer.get_by_role('combobox').select_option(label='Hostel Kitchen '+tag)
     customer.get_by_label('Add one Masala dosa').click()
     customer.get_by_label('Delivery location').fill('Hostel B, room 12')
     customer.get_by_text('Place order').click()
