@@ -139,3 +139,33 @@ def orders(user=Depends(auth.current)):
             result.append({**asdict(order), 'items': [dict(row) for row in items],
                            'kitchen': db.get(Restaurant, id=order.restaurant).name})
         return result
+
+def dispatch():
+    """Reserve an idle partner and the oldest waiting order in one write transaction."""
+    with transaction(True) as db:
+        idle = db.sql.execute("""SELECT id FROM Account WHERE role='partner'
+            AND id NOT IN (SELECT partner FROM Purchase WHERE status IN ('assigned','picked_up') AND partner IS NOT NULL)
+            ORDER BY id""").fetchall()
+        for order, partner in zip(db.list(Purchase, status='waiting'), idle):
+            order.status, order.partner = 'assigned', partner['id']
+            db.save(order)
+
+@app.post('/api/orders/{order_id}/{action}')
+def transition(order_id: int, action: Literal['accept','reject','pickup','deliver'], tasks: BackgroundTasks, user=Depends(auth.current)):
+    rules = {'accept': ('owner','requested','waiting'), 'reject': ('owner','requested','rejected'),
+             'pickup': ('partner','assigned','picked_up'), 'deliver': ('partner','picked_up','delivered')}
+    role, before, after = rules[action]
+    if user.role != role:
+        raise HTTPException(403, 'This action belongs to another role.')
+    with transaction(True) as db:
+        scope = {'restaurant': db.get(Restaurant, owner=user.id).id} if role == 'owner' else {'partner': user.id}
+        order = db.get(Purchase, id=order_id, **scope)
+        if not order:
+            raise HTTPException(404, 'Order unavailable.')
+        if order.status != before:
+            raise HTTPException(409, 'Order status has changed. Refresh the list.')
+        order.status = after
+        db.save(order)
+    if action in ('accept', 'deliver'):
+        tasks.add_task(dispatch)
+    return order
